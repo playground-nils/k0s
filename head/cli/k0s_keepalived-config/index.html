@@ -12,7 +12,7 @@
         <meta name="author" content="Mirantis, Inc.">
       
       
-        <link rel="canonical" href="https://docs.k0sproject.io/head/cli/k0s_kubeconfig_create/">
+        <link rel="canonical" href="https://docs.k0sproject.io/head/cli/k0s_keepalived-config/">
       
       
       
@@ -22,7 +22,7 @@
     
     
       
-        <title>K0s kubeconfig create - Documentation</title>
+        <title>K0s keepalived config - Documentation</title>
       
     
     
@@ -86,7 +86,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#k0s-kubeconfig-create" class="md-skip">
+        <a href="#k0s-keepalived-config" class="md-skip">
           Skip to content
         </a>
       
@@ -137,7 +137,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              K0s kubeconfig create
+              K0s keepalived config
             
           </span>
         </div>
@@ -1783,37 +1783,16 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#k0s-kubeconfig-create" class="md-nav__link">
-    k0s kubeconfig create
+  <a href="#k0s-keepalived-config" class="md-nav__link">
+    k0s keepalived-config
   </a>
   
-    <nav class="md-nav" aria-label="k0s kubeconfig create">
+    <nav class="md-nav" aria-label="k0s keepalived-config">
       <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#synopsis" class="md-nav__link">
-    Synopsis
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    Examples
-  </a>
-  
-</li>
         
           <li class="md-nav__item">
   <a href="#options" class="md-nav__link">
     Options
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#options-inherited-from-parent-commands" class="md-nav__link">
-    Options inherited from parent commands
   </a>
   
 </li>
@@ -1845,46 +1824,20 @@
                   
 
 
-  <h1>K0s kubeconfig create</h1>
+  <h1>K0s keepalived config</h1>
 
-<h2 id="k0s-kubeconfig-create">k0s kubeconfig create<a class="headerlink" href="#k0s-kubeconfig-create" title="Permanent link">#</a></h2>
-<p>Create a kubeconfig for a user</p>
-<h3 id="synopsis">Synopsis<a class="headerlink" href="#synopsis" title="Permanent link">#</a></h3>
-<p>Create a kubeconfig with a signed certificate and public key for a given user (and optionally user groups)
-Note: A certificate once signed cannot be revoked for a particular user</p>
-<div class="highlight"><pre><span></span><code>k0s kubeconfig create username [flags]
-</code></pre></div>
-<h3 id="examples">Examples<a class="headerlink" href="#examples" title="Permanent link">#</a></h3>
-<div class="highlight"><pre><span></span><code>    Command to create a kubeconfig for a user:
-    CLI argument:
-    $ k0s kubeconfig create username
-
-    optionally add groups:
-    $ k0s kubeconfig create username --groups [groups]
-
-    customize the expiration duration of the certificate:
-    $ k0s kubeconfig create username --certificate-expires-after 8760h
-
-    set custom context name:
-    $ k0s kubeconfig create username --context-name my-cluster
+<h2 id="k0s-keepalived-config">k0s keepalived-config<a class="headerlink" href="#k0s-keepalived-config" title="Permanent link">#</a></h2>
+<p>Keepalived configuration related sub-commands</p>
+<div class="highlight"><pre><span></span><code>k0s keepalived-config [flags]
 </code></pre></div>
 <h3 id="options">Options<a class="headerlink" href="#options" title="Permanent link">#</a></h3>
-<div class="highlight"><pre><span></span><code>      --certificate-expires-after duration   The expiration duration of the certificate (default 8760h0m0s)
-  -c, --config string                        config file, use &#39;-&#39; to read the config from stdin (default &quot;/etc/k0s/k0s.yaml&quot;)
-      --context-name string                  Specify kubeconfig context name (default &quot;k0s&quot;)
-      --data-dir string                      Data Directory for k0s. DO NOT CHANGE for an existing setup, things will break! (default &quot;/var/lib/k0s&quot;)
-      --groups string                        Specify groups
-  -h, --help                                 help for create
-      --status-socket string                 Full file path to the socket file. (default: &lt;rundir&gt;/status.sock)
-</code></pre></div>
-<h3 id="options-inherited-from-parent-commands">Options inherited from parent commands<a class="headerlink" href="#options-inherited-from-parent-commands" title="Permanent link">#</a></h3>
-<div class="highlight"><pre><span></span><code>  -d, --debug                  Debug logging (implies verbose logging)
-      --debugListenOn string   Http listenOn for Debug pprof handler (default &quot;:6060&quot;)
-  -v, --verbose                Verbose logging
+<div class="highlight"><pre><span></span><code>  -h, --help   help for keepalived-config
 </code></pre></div>
 <h3 id="see-also">SEE ALSO<a class="headerlink" href="#see-also" title="Permanent link">#</a></h3>
 <ul>
-<li><a href="../k0s_kubeconfig/">k0s kubeconfig</a>    - Create a kubeconfig file for a specified user</li>
+<li><a href="../k0s/">k0s</a>  - k0s - Zero Friction Kubernetes</li>
+<li><a href="../k0s_keepalived-config_virtualservers/">k0s keepalived-config virtualservers</a>    - Output the default Keepalived Virtual Servers configuration template to stdout</li>
+<li><a href="../k0s_keepalived-config_vrrp/">k0s keepalived-config vrrp</a>    - Output the default Keepalived VRRP configuration template to stdout</li>
 </ul>
 
 
