@@ -1,17 +1,14 @@
 name: Release
-
-on:
+'on':
   push:
     tags:
-      - v* # Push events to matching v*, i.e. v1.0, v20.15.10
-
+    - v*
 env:
   K0SCTL_VERSION: 0.13.2
-
 jobs:
   release:
     env:
-      TF_VAR_k0s_binary_path: "${{ github.workspace }}/k0s"
+      TF_VAR_k0s_binary_path: ${{ github.workspace }}/k0s
       KUBECONFIG: ${{ github.workspace }}/kubeconfig
     name: release
     runs-on: ubuntu-latest
@@ -20,404 +17,341 @@ jobs:
       tag_name: ${{ steps.branch_name.outputs.TAG_NAME }}
       image_tag: ${{ steps.image_tag.outputs.IMAGE_TAGS }}
     steps:
-      # Ugly hack to get the tag name
-      # github.ref gives the full reference like refs.tags.v0.0.1-beta1
-      - name: Branch name
-        id: branch_name
-        run: |
-          echo TAG_NAME="${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
-      - name: Create Release
-        id: create_release
-        uses: shogo82148/actions-create-release@v1.4.4
-        with:
-          release_name: ${{ steps.branch_name.outputs.TAG_NAME }}
-          draft: true # So we can manually edit before publishing
-          prerelease: ${{ contains(github.ref, '-') }} # v0.1.2-beta1, 1.2.3-rc1
-      - name: Prepare image tags
-        id: image_tag
-        env:
-          TAGS: ${{ steps.branch_name.outputs.TAG_NAME }}
-        # Basically just replace the '+' with '-' as '+' is not allowed in tags
-        run: |
-          echo IMAGE_TAGS="${TAGS//+/-}" >> $GITHUB_OUTPUT
+    - name: Branch name
+      id: branch_name
+      run: 'echo TAG_NAME="${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+        '
+    - name: Create Release
+      id: create_release
+      uses: shogo82148/actions-create-release@v1.4.4
+      with:
+        release_name: ${{ steps.branch_name.outputs.TAG_NAME }}
+        draft: true
+        prerelease: ${{ contains(github.ref, '-') }}
+    - name: Prepare image tags
+      id: image_tag
+      env:
+        TAGS: ${{ steps.branch_name.outputs.TAG_NAME }}
+      run: 'echo IMAGE_TAGS="${TAGS//+/-}" >> $GITHUB_OUTPUT
+
+        '
   x64:
     needs: release
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     env:
       SEGMENT_TOKEN: ${{ secrets.SEGMENT_WRITE_KEY_PROD }}
       EULA_NOTICE: ${{ secrets.EULA_NOTICE }}
     steps:
-      - name: Clean Docker before build
-        run: |
-          docker system prune --all --volumes --force
+    - name: Clean Docker before build
+      run: 'docker system prune --all --volumes --force
 
-      # https://github.com/actions/checkout/issues/273#issuecomment-642908752 (see below)
-      - name: "Pre: Fixup directories"
-        run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
+        '
+    - name: 'Pre: Fixup directories'
+      run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v3
+    - name: Prepare build environment
+      run: .github/workflows/prepare-build-env.sh
+    - name: Build
+      run: make EMBEDDED_BINS_BUILDMODE=docker
+      env:
+        VERSION: ${{ needs.release.outputs.tag_name }}
+    - name: Set up Go for smoke tests
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    - name: Run basic smoke test
+      run: make check-basic
+    - name: Create airgap image bundle
+      run: make airgap-image-bundle-linux-amd64.tar
+    - name: Collect smoke test logs
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: logs
+        path: tests/*.log
+    - name: Upload Release Assets - Binary
+      id: upload-release-asset
+      uses: shogo82148/actions-upload-release-asset@v1.6.6
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: ./k0s
+        asset_name: k0s-${{ needs.release.outputs.tag_name }}-amd64
+        asset_content_type: application/octet-stream
+    - name: Upload Artifact for use in other Jobs
+      uses: actions/upload-artifact@v3
+      with:
+        name: k0s-amd64
+        path: ./k0s
+    - name: Upload Release Assets - Bundle
+      id: upload-release-asset-images
+      uses: shogo82148/actions-upload-release-asset@v1.6.6
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: ./airgap-image-bundle-linux-amd64.tar
+        asset_name: k0s-airgap-bundle-${{ needs.release.outputs.tag_name }}-amd64
+        asset_content_type: application/octet-stream
+    - name: Clean Docker after build
+      if: always()
+      run: 'docker system prune --all --volumes --force
 
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v3
-
-      - name: Prepare build environment
-        run: .github/workflows/prepare-build-env.sh
-
-      - name: Build
-        run: make EMBEDDED_BINS_BUILDMODE=docker
-        env:
-          VERSION: ${{ needs.release.outputs.tag_name }}
-
-      - name: Set up Go for smoke tests
-        uses: actions/setup-go@v3
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Run basic smoke test
-        run: make check-basic
-
-      - name: Create airgap image bundle
-        run: make airgap-image-bundle-linux-amd64.tar
-
-      - name: Collect smoke test logs
-        if: failure()
-        uses: actions/upload-artifact@v3
-        with:
-          name: logs
-          path: tests/*.log
-
-      - name: Upload Release Assets - Binary
-        id: upload-release-asset
-        uses: shogo82148/actions-upload-release-asset@v1.6.6
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./k0s
-          asset_name: k0s-${{ needs.release.outputs.tag_name }}-amd64
-          asset_content_type: application/octet-stream
-
-      - name: Upload Artifact for use in other Jobs
-        uses: actions/upload-artifact@v3
-        with:
-          name: k0s-amd64
-          path: ./k0s
-
-      - name: Upload Release Assets - Bundle
-        id: upload-release-asset-images
-        uses: shogo82148/actions-upload-release-asset@v1.6.6
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./airgap-image-bundle-linux-amd64.tar
-          asset_name: k0s-airgap-bundle-${{ needs.release.outputs.tag_name }}-amd64
-          asset_content_type: application/octet-stream
-
-      - name: Clean Docker after build
-        if: always()
-        run: |
-          docker system prune --all --volumes --force
-
-      # https://github.com/actions/checkout/issues/273#issuecomment-642908752
-      # Golang mod cache tends to set directories to read-only, which breaks any
-      # attempts to simply remove those directories. The `make clean-gocache`
-      # target takes care of this, but the mod cache can't be deleted here,
-      # since it shall be cached across builds, and caching takes place as a
-      # post build action. So, as a workaround, ensure that all subdirectories
-      # are writable.
-      - name: "Post: Fixup directories"
-        if: always()
-        run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
-
+        '
+    - name: 'Post: Fixup directories'
+      if: always()
+      run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
   windows:
     needs: release
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-latest
     env:
       SEGMENT_TOKEN: ${{ secrets.SEGMENT_WRITE_KEY_PROD }}
       EULA_NOTICE: ${{ secrets.EULA_NOTICE }}
       TARGET_OS: windows
     steps:
-      # https://github.com/actions/checkout/issues/273#issuecomment-642908752 (see below)
-      - name: "Pre: Fixup directories"
-        run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
+    - name: 'Pre: Fixup directories'
+      run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v3
+    - name: Build
+      run: make EMBEDDED_BINS_BUILDMODE=docker k0s.exe
+      env:
+        VERSION: ${{ needs.release.outputs.tag_name }}
+    - name: Clean Docker
+      run: 'docker system prune --all --volumes --force
 
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v3
-
-      - name: Build
-        run: make EMBEDDED_BINS_BUILDMODE=docker k0s.exe
-        env:
-          VERSION: ${{ needs.release.outputs.tag_name }}
-
-      - name: Clean Docker
-        run: |
-          docker system prune --all --volumes --force
-
-      - name: Upload Release Assets
-        id: upload-release-asset
-        uses: shogo82148/actions-upload-release-asset@v1.6.6
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./k0s.exe
-          asset_name: k0s-${{ needs.release.outputs.tag_name }}-amd64.exe
-          asset_content_type: application/octet-stream
-
-      # https://github.com/actions/checkout/issues/273#issuecomment-642908752
-      # Golang mod cache tends to set directories to read-only, which breaks any
-      # attempts to simply remove those directories. The `make clean-gocache`
-      # target takes care of this, but the mod cache can't be deleted here,
-      # since it shall be cached across builds, and caching takes place as a
-      # post build action. So, as a workaround, ensure that all subdirectories
-      # are writable.
-      - name: "Post: Fixup directories"
-        if: always()
-        run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
-
+        '
+    - name: Upload Release Assets
+      id: upload-release-asset
+      uses: shogo82148/actions-upload-release-asset@v1.6.6
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: ./k0s.exe
+        asset_name: k0s-${{ needs.release.outputs.tag_name }}-amd64.exe
+        asset_content_type: application/octet-stream
+    - name: 'Post: Fixup directories'
+      if: always()
+      run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
   arm64:
     needs: release
-    runs-on: [self-hosted, linux, arm64]
+    runs-on: ubuntu-latest
     env:
       SEGMENT_TOKEN: ${{ secrets.SEGMENT_WRITE_KEY_PROD }}
       EULA_NOTICE: ${{ secrets.EULA_NOTICE }}
     steps:
-      # https://github.com/actions/checkout/issues/273#issuecomment-642908752 (see below)
-      - name: "Pre: Fixup directories"
-        run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
+    - name: 'Pre: Fixup directories'
+      run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
+    - name: Clean Docker before build
+      run: 'docker system prune --all --volumes --force
 
-      - name: Clean Docker before build
-        run: |
-          docker system prune --all --volumes --force
+        '
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v3
+    - name: Prepare build environment
+      run: .github/workflows/prepare-build-env.sh
+      working-directory: ./
+    - name: Build
+      run: make EMBEDDED_BINS_BUILDMODE=docker
+      env:
+        VERSION: ${{ needs.release.outputs.tag_name }}
+    - name: Set up Go for smoke tests
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    - name: Run basic smoke test
+      run: make check-basic
+    - name: Create airgap image bundle
+      run: make airgap-image-bundle-linux-arm64.tar
+    - name: Collect smoke test logs
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: logs
+        path: tests/*.log
+    - name: Upload Release Assets - Binary
+      id: upload-release-asset
+      uses: shogo82148/actions-upload-release-asset@v1.6.6
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: ./k0s
+        asset_name: k0s-${{ needs.release.outputs.tag_name }}-arm64
+        asset_content_type: application/octet-stream
+    - name: Upload Artifact for use in other Jobs
+      uses: actions/upload-artifact@v3
+      with:
+        name: k0s-arm64
+        path: ./k0s
+    - name: Upload Release Assets - Bundle
+      id: upload-release-asset-images
+      uses: shogo82148/actions-upload-release-asset@v1.6.6
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: ./airgap-image-bundle-linux-arm64.tar
+        asset_name: k0s-airgap-bundle-${{ needs.release.outputs.tag_name }}-arm64
+        asset_content_type: application/octet-stream
+    - name: Clean Docker after build
+      if: always()
+      run: 'docker system prune --all --volumes --force
 
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v3
-
-      - name: Prepare build environment
-        run: .github/workflows/prepare-build-env.sh
-        working-directory: ./
-
-      - name: Build
-        run: make EMBEDDED_BINS_BUILDMODE=docker
-        env:
-          VERSION: ${{ needs.release.outputs.tag_name }}
-
-      - name: Set up Go for smoke tests
-        uses: actions/setup-go@v3
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Run basic smoke test
-        run: make check-basic
-
-      - name: Create airgap image bundle
-        run: make airgap-image-bundle-linux-arm64.tar
-
-      - name: Collect smoke test logs
-        if: failure()
-        uses: actions/upload-artifact@v3
-        with:
-          name: logs
-          path: tests/*.log
-
-      - name: Upload Release Assets - Binary
-        id: upload-release-asset
-        uses: shogo82148/actions-upload-release-asset@v1.6.6
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./k0s
-          asset_name: k0s-${{ needs.release.outputs.tag_name }}-arm64
-          asset_content_type: application/octet-stream
-
-      - name: Upload Artifact for use in other Jobs
-        uses: actions/upload-artifact@v3
-        with:
-          name: k0s-arm64
-          path: ./k0s
-
-      - name: Upload Release Assets - Bundle
-        id: upload-release-asset-images
-        uses: shogo82148/actions-upload-release-asset@v1.6.6
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./airgap-image-bundle-linux-arm64.tar
-          asset_name: k0s-airgap-bundle-${{ needs.release.outputs.tag_name }}-arm64
-          asset_content_type: application/octet-stream
-
-      - name: Clean Docker after build
-        if: always()
-        run: |
-          docker system prune --all --volumes --force
-
-      # https://github.com/actions/checkout/issues/273#issuecomment-642908752
-      # Golang mod cache tends to set directories to read-only, which breaks any
-      # attempts to simply remove those directories. The `make clean-gocache`
-      # target takes care of this, but the mod cache can't be deleted here,
-      # since it shall be cached across builds, and caching takes place as a
-      # post build action. So, as a workaround, ensure that all subdirectories
-      # are writable.
-      - name: "Post: Fixup directories"
-        if: always()
-        run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
-
+        '
+    - name: 'Post: Fixup directories'
+      if: always()
+      run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
   armv7:
     needs: release
-    runs-on: [self-hosted, linux, arm]
+    runs-on: ubuntu-latest
     env:
       SEGMENT_TOKEN: ${{ secrets.SEGMENT_WRITE_KEY_PROD }}
       EULA_NOTICE: ${{ secrets.EULA_NOTICE }}
     steps:
-      # https://github.com/actions/checkout/issues/273#issuecomment-642908752 (see below)
-      - name: "Pre: Fixup directories"
-        run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
+    - name: 'Pre: Fixup directories'
+      run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v3
+    - name: Prepare build environment
+      run: .github/workflows/prepare-build-env.sh
+      working-directory: ./
+    - name: Build
+      run: make EMBEDDED_BINS_BUILDMODE=docker
+      env:
+        VERSION: ${{ needs.release.outputs.tag_name }}
+    - name: Set up Go for smoke tests (armv6l)
+      run: 'echo "Setup go stable version $GO_VERSION"
 
-      - name: Check out code into the Go module directory
-        uses: actions/checkout@v3
+        rm -rf -- "$HOME/.local/go"
 
-      - name: Prepare build environment
-        run: .github/workflows/prepare-build-env.sh
-        working-directory: ./
+        mkdir -p -- "$HOME/.local/go"
 
-      - name: Build
-        run: make EMBEDDED_BINS_BUILDMODE=docker
-        env:
-          VERSION: ${{ needs.release.outputs.tag_name }}
+        curl --silent -L "https://go.dev/dl/go${GO_VERSION%%.0}.linux-armv6l.tar.gz"
+        | tar -C "$HOME/.local" -xz
 
-      # Need to install Go manually: https://github.com/actions/setup-go/issues/106
-      - name: Set up Go for smoke tests (armv6l)
-        run: |
-          echo "Setup go stable version $GO_VERSION"
-          rm -rf -- "$HOME/.local/go"
-          mkdir -p -- "$HOME/.local/go"
-          curl --silent -L "https://go.dev/dl/go${GO_VERSION%%.0}.linux-armv6l.tar.gz" | tar -C "$HOME/.local" -xz
 
-          echo "$HOME/.local/go/bin" >>"$GITHUB_PATH"
-          export PATH="$PATH:$HOME/.local/go/bin"
-          echo Added go to the path
+        echo "$HOME/.local/go/bin" >>"$GITHUB_PATH"
 
-          echo "Successfully setup go version $GO_VERSION"
-          go version
-          echo ::group::go env
-          go env
-          echo ::endgroup::
+        export PATH="$PATH:$HOME/.local/go/bin"
 
-      - name: Run basic smoke test
-        run: make check-basic
+        echo Added go to the path
 
-      - name: Create airgap image bundle
-        run: make airgap-image-bundle-linux-arm.tar
 
-      - name: Collect smoke test logs
-        if: failure()
-        uses: actions/upload-artifact@v3
-        with:
-          name: logs
-          path: tests/*.log
+        echo "Successfully setup go version $GO_VERSION"
 
-      - name: Upload Release Assets - Binary
-        id: upload-release-asset
-        uses: shogo82148/actions-upload-release-asset@v1.6.6
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./k0s
-          asset_name: k0s-${{ needs.release.outputs.tag_name }}-arm
-          asset_content_type: application/octet-stream
+        go version
 
-      - name: Upload Artifact for use in other Jobs
-        uses: actions/upload-artifact@v3
-        with:
-          name: k0s-arm
-          path: ./k0s
+        echo ::group::go env
 
-      - name: Upload Release Assets - Bundle
-        id: upload-release-asset-images
-        uses: shogo82148/actions-upload-release-asset@v1.6.6
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./airgap-image-bundle-linux-arm.tar
-          asset_name: k0s-airgap-bundle-${{ needs.release.outputs.tag_name }}-arm
-          asset_content_type: application/octet-stream
+        go env
 
-      # https://github.com/actions/checkout/issues/273#issuecomment-642908752
-      # Golang mod cache tends to set directories to read-only, which breaks any
-      # attempts to simply remove those directories. The `make clean-gocache`
-      # target takes care of this, but the mod cache can't be deleted here,
-      # since it shall be cached across builds, and caching takes place as a
-      # post build action. So, as a workaround, ensure that all subdirectories
-      # are writable.
-      - name: "Post: Fixup directories"
-        if: always()
-        run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
+        echo ::endgroup::
 
+        '
+    - name: Run basic smoke test
+      run: make check-basic
+    - name: Create airgap image bundle
+      run: make airgap-image-bundle-linux-arm.tar
+    - name: Collect smoke test logs
+      if: failure()
+      uses: actions/upload-artifact@v3
+      with:
+        name: logs
+        path: tests/*.log
+    - name: Upload Release Assets - Binary
+      id: upload-release-asset
+      uses: shogo82148/actions-upload-release-asset@v1.6.6
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: ./k0s
+        asset_name: k0s-${{ needs.release.outputs.tag_name }}-arm
+        asset_content_type: application/octet-stream
+    - name: Upload Artifact for use in other Jobs
+      uses: actions/upload-artifact@v3
+      with:
+        name: k0s-arm
+        path: ./k0s
+    - name: Upload Release Assets - Bundle
+      id: upload-release-asset-images
+      uses: shogo82148/actions-upload-release-asset@v1.6.6
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: ./airgap-image-bundle-linux-arm.tar
+        asset_name: k0s-airgap-bundle-${{ needs.release.outputs.tag_name }}-arm
+        asset_content_type: application/octet-stream
+    - name: 'Post: Fixup directories'
+      if: always()
+      run: find . -type d -not -perm /u+w -exec chmod u+w '{}' \;
   build-image:
     needs:
-      - release
-      - x64
-      - arm64
-      - armv7
+    - release
+    - x64
+    - arm64
+    - armv7
     runs-on: ubuntu-22.04
     steps:
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    - name: Run git checkout
+      uses: actions/checkout@v3
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    - name: Login to DockerHub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+    - name: Fetch k0s amd64
+      uses: actions/download-artifact@v3
+      with:
+        name: k0s-amd64
+        path: ./k0s-amd64
+    - name: Fetch k0s arm64
+      uses: actions/download-artifact@v3
+      with:
+        name: k0s-arm64
+        path: ./k0s-arm64
+    - name: Fetch k0s arm
+      uses: actions/download-artifact@v3
+      with:
+        name: k0s-arm
+        path: ./k0s-arm
+    - name: Make binaries executable
+      run: chmod +x ./k0s-*/k0s
+    - name: Fetch Alpine version to use
+      run: 'alpinePatchVersion="$(./vars.sh alpine_patch_version)"
 
-      - name: Run git checkout
-        uses: actions/checkout@v3
+        echo "ALPINE_PATCH_VERSION=$alpinePatchVersion" >>"$GITHUB_ENV"
 
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        '
+    - name: Build image and push to Docker Hub and GitHub image registry
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64,linux/arm/v7
+        tags: 'ghcr.io/k0sproject/k0s:${{ needs.release.outputs.image_tag }}
 
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          docker.io/k0sproject/k0s:${{ needs.release.outputs.image_tag }}
 
-      - name: Fetch k0s amd64
-        uses: actions/download-artifact@v3
-        with:
-          name: k0s-amd64
-          path: ./k0s-amd64
-      - name: Fetch k0s arm64
-        uses: actions/download-artifact@v3
-        with:
-          name: k0s-arm64
-          path: ./k0s-arm64
-      - name: Fetch k0s arm
-        uses: actions/download-artifact@v3
-        with:
-          name: k0s-arm
-          path: ./k0s-arm
+          '
+        build-args: 'ALPINE_VERSION=${{ env.ALPINE_PATCH_VERSION }}
 
-      - name: Make binaries executable
-        run: chmod +x ./k0s-*/k0s
-
-      - name: Fetch Alpine version to use
-        run: |
-          alpinePatchVersion="$(./vars.sh alpine_patch_version)"
-          echo "ALPINE_PATCH_VERSION=$alpinePatchVersion" >>"$GITHUB_ENV"
-
-      - name: Build image and push to Docker Hub and GitHub image registry
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
-          tags: |
-            ghcr.io/k0sproject/k0s:${{ needs.release.outputs.image_tag }}
-            docker.io/k0sproject/k0s:${{ needs.release.outputs.image_tag }}
-          build-args: |
-            ALPINE_VERSION=${{ env.ALPINE_PATCH_VERSION }}
-          push: true
-
+          '
+        push: true
   conformance-test:
     needs:
-      - release
-      - x64
-      - arm64
+    - release
+    - x64
+    - arm64
     strategy:
       matrix:
-        arch: [ amd64, arm64 ]
+        arch:
+        - amd64
+        - arm64
         include:
-          - arch: amd64
-            instance-type: c4.xlarge
-          - arch: arm64
-            instance-type: c7g.xlarge
+        - arch: amd64
+          instance-type: c4.xlarge
+        - arch: arm64
+          instance-type: c7g.xlarge
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -427,82 +361,84 @@ jobs:
       TF_VAR_instance_arch: ${{ matrix.arch }}
       TF_VAR_instance_type: ${{ matrix.instance-type }}
       KUBECONFIG: ${{ github.workspace }}/kubeconfig
-
-    name: "K8s Conformance Testing"
+    name: K8s Conformance Testing
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./inttest/sonobuoy/terraform
     steps:
-      - name: Run git checkout
-        uses: actions/checkout@v3
+    - name: Run git checkout
+      uses: actions/checkout@v3
+    - name: Prepare build environment
+      working-directory: ./
+      run: .github/workflows/prepare-build-env.sh
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: ${{ env.GO_VERSION }}
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+    - name: Terraform Init
+      run: terraform init
+    - name: Fetch k0s Artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: k0s-${{ matrix.arch }}
+        path: ${{ github.workspace }}/k0s
+    - name: Launch Test Environment
+      env:
+        TF_VAR_cluster_name: k0s_conformance
+        TF_VAR_k0s_version: ${{ needs.release.outputs.tag_name }}
+      run: '# Start SSH Agent
 
-      - name: Prepare build environment
-        working-directory: ./
-        run: .github/workflows/prepare-build-env.sh
+        eval `ssh-agent -s`
 
-      - name: Set up Go
-        uses: actions/setup-go@v3
-        with:
-          go-version: ${{ env.GO_VERSION }}
 
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v2
-        with:
-          terraform_version: ${{ env.TF_VERSION }}
+        terraform apply -auto-approve
 
-      - name: Terraform Init
-        run: terraform init
+        '
+    - name: Create k0s Cluster using k0sctl
+      id: k0sctl
+      run: '# download k0sctl
 
-      - name: Fetch k0s Artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: k0s-${{ matrix.arch }}
-          path: ${{ github.workspace }}/k0s
+        curl --silent -L "https://github.com/k0sproject/k0sctl/releases/download/v${K0SCTL_VERSION}/k0sctl-linux-x64"
+        -o k0sctl
 
-      - name: Launch Test Environment
-        env:
-          TF_VAR_cluster_name: "k0s_conformance"
-          TF_VAR_k0s_version: ${{ needs.release.outputs.tag_name }}
-        run: |
-          # Start SSH Agent
-          eval `ssh-agent -s`
+        chmod +x ./k0sctl
 
-          terraform apply -auto-approve
+        ./k0sctl apply -c k0sctl.yaml
 
-      - name: Create k0s Cluster using k0sctl
-        id: k0sctl
-        run: |
-          # download k0sctl
-          curl --silent -L "https://github.com/k0sproject/k0sctl/releases/download/v${K0SCTL_VERSION}/k0sctl-linux-x64" -o k0sctl
-          chmod +x ./k0sctl
-          ./k0sctl apply -c k0sctl.yaml
 
-          # save kubeconfig file
-          ./k0sctl kubeconfig > $KUBECONFIG
+        # save kubeconfig file
 
-      - name: Run Full Conformance Check
-        run: make check-conformance
-        working-directory: ./inttest
+        ./k0sctl kubeconfig > $KUBECONFIG
 
-      - name: Retrieve Sonobuoy Results
-        run: |
-          make get-conformance-results
-        working-directory: ./inttest
+        '
+    - name: Run Full Conformance Check
+      run: make check-conformance
+      working-directory: ./inttest
+    - name: Retrieve Sonobuoy Results
+      run: 'make get-conformance-results
 
-      - name: Upload conformance test result to Release Assets
-        uses: shogo82148/actions-upload-release-asset@v1.6.6 # Allows us to upload a file with wildcard patterns
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: inttest/*_sonobuoy_*.tar.gz
-          asset_name: sonobuoy-conformance-results-${{ matrix.arch }}-${{ needs.release.outputs.tag_name }}.tar.gz
-          asset_content_type: application/gzip
-          overwrite: true # In case we need to re-run the conformance this let's us to overwrite the results tarball
-        if: ${{ always() }}
-      - name: Clean-Up Environment
-        env:
-          TF_VAR_cluster_name: "k0s_conformance"
-          TF_VAR_k0s_version: ${{ needs.release.outputs.tag_name }}
-        run: |
-          terraform destroy -auto-approve
-        if: ${{ always() }}
+        '
+      working-directory: ./inttest
+    - name: Upload conformance test result to Release Assets
+      uses: shogo82148/actions-upload-release-asset@v1.6.6
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: inttest/*_sonobuoy_*.tar.gz
+        asset_name: sonobuoy-conformance-results-${{ matrix.arch }}-${{ needs.release.outputs.tag_name
+          }}.tar.gz
+        asset_content_type: application/gzip
+        overwrite: true
+      if: ${{ always() }}
+    - name: Clean-Up Environment
+      env:
+        TF_VAR_cluster_name: k0s_conformance
+        TF_VAR_k0s_version: ${{ needs.release.outputs.tag_name }}
+      run: 'terraform destroy -auto-approve
+
+        '
+      if: ${{ always() }}
